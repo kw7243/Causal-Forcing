@@ -1,4 +1,5 @@
 from typing import List, Optional
+import time
 import torch
 
 from utils.wan_wrapper import WanDiffusionWrapper, WanTextEncoder, WanVAEWrapper
@@ -30,6 +31,18 @@ class CausalInferencePipeline(torch.nn.Module):
             timesteps = torch.cat((self.scheduler.timesteps.cpu(), torch.tensor([0], dtype=torch.float32)))
             self.denoising_step_list = timesteps[1000 - self.denoising_step_list]
 
+        # Optional: separate denoising schedule for the first chunk (block 0).
+        # If the config does not provide `denoising_step_list_first_chunk`, the
+        # first chunk uses the same schedule as the rest (backwards compatible).
+        if hasattr(args, "denoising_step_list_first_chunk") and args.denoising_step_list_first_chunk is not None:
+            self.denoising_step_list_first_chunk = torch.tensor(
+                args.denoising_step_list_first_chunk, dtype=torch.long)
+            if args.warp_denoising_step:
+                timesteps = torch.cat((self.scheduler.timesteps.cpu(), torch.tensor([0], dtype=torch.float32)))
+                self.denoising_step_list_first_chunk = timesteps[1000 - self.denoising_step_list_first_chunk]
+        else:
+            self.denoising_step_list_first_chunk = None
+
         self.num_transformer_blocks = 30
         self.frame_seq_length = 1560
 
@@ -38,6 +51,11 @@ class CausalInferencePipeline(torch.nn.Module):
         self.num_frame_per_block = getattr(args, "num_frame_per_block", 1)
         self.independent_first_frame = args.independent_first_frame
         self.local_attn_size = self.generator.model.local_attn_size
+
+        # Timing state; populated only when `report_timing=True` is passed to
+        # `inference()`. Kept as attributes so callers can read them afterward.
+        self.last_generation_time = None
+        self.first_chunk_time = None
 
         print(f"KV inference with {self.num_frame_per_block} frames per block")
 
@@ -52,7 +70,8 @@ class CausalInferencePipeline(torch.nn.Module):
         return_latents: bool = False,
         profile: bool = False,
         low_memory: bool = False,
-        rectified_tf = False 
+        rectified_tf = False,
+        report_timing: bool = False,
     ) -> torch.Tensor:
         """
         Perform inference on the given noise and text prompts.
@@ -84,6 +103,13 @@ class CausalInferencePipeline(torch.nn.Module):
             num_blocks = (num_frames - 1) // self.num_frame_per_block
         num_input_frames = initial_latent.shape[1] if initial_latent is not None else 0
         num_output_frames = num_frames + num_input_frames  # add the initial latent frames
+
+        # Optional: start generation timer (excludes VAE decode). Only runs
+        # when the caller explicitly opts in.
+        if report_timing:
+            torch.cuda.synchronize()
+            self._gen_start_time = time.time()
+
         conditional_dict = self.text_encoder(
             text_prompts=text_prompts
         )
@@ -180,23 +206,36 @@ class CausalInferencePipeline(torch.nn.Module):
         all_num_frames = [self.num_frame_per_block] * num_blocks
         if self.independent_first_frame and initial_latent is None:
             all_num_frames = [1] + all_num_frames
-        for current_num_frames in tqdm.tqdm(all_num_frames):
+        for block_index, current_num_frames in enumerate(tqdm.tqdm(all_num_frames)):
+            # Optional: time the first block (TTFC). Excludes the KV-cache
+            # refresh pass that follows the main denoising.
+            if report_timing and block_index == 0:
+                torch.cuda.synchronize()
+                _first_block_start = time.time()
+
             if profile:
                 block_start.record()
 
             noisy_input = noise[
                 :, current_start_frame - num_input_frames:current_start_frame + current_num_frames - num_input_frames]
 
+            # Select denoising schedule: block 0 may use a dedicated schedule
+            # when provided by the config; otherwise all blocks share the same list.
+            current_denoising_list = (
+                self.denoising_step_list_first_chunk
+                if block_index == 0 and self.denoising_step_list_first_chunk is not None
+                else self.denoising_step_list
+            )
+
             # Step 3.1: Spatial denoising loop
-            for index, current_timestep in enumerate(self.denoising_step_list):
-                # print(f"current_timestep: {current_timestep}")
+            for index, current_timestep in enumerate(current_denoising_list):
                 # set current timestep
                 timestep = torch.ones(
                     [batch_size, current_num_frames],
                     device=noise.device,
                     dtype=torch.int64) * current_timestep
 
-                if index < len(self.denoising_step_list) - 1:
+                if index < len(current_denoising_list) - 1:
                     _, denoised_pred = self.generator(
                         noisy_image_or_video=noisy_input,
                         conditional_dict=conditional_dict,
@@ -205,7 +244,7 @@ class CausalInferencePipeline(torch.nn.Module):
                         crossattn_cache=self.crossattn_cache,
                         current_start=current_start_frame * self.frame_seq_length
                     )
-                    next_timestep = self.denoising_step_list[index + 1]
+                    next_timestep = current_denoising_list[index + 1]
                     noisy_input = self.scheduler.add_noise(
                         denoised_pred.flatten(0, 1),
                         torch.randn_like(denoised_pred.flatten(0, 1)),
@@ -226,9 +265,15 @@ class CausalInferencePipeline(torch.nn.Module):
             # Step 3.2: record the model's output
             output[:, current_start_frame:current_start_frame + current_num_frames] = denoised_pred
 
+            # Record first-chunk latency (denoising only, before KV cache refresh).
+            if report_timing and block_index == 0:
+                torch.cuda.synchronize()
+                self.first_chunk_time = time.time() - _first_block_start
+                print(f"First chunk time: {self.first_chunk_time:.2f}s")
+
             # Step 3.3: rerun with timestep zero to update KV cache using clean context
             context_timestep = torch.ones_like(timestep) * self.args.context_noise
-            
+
             self.generator(
                 noisy_image_or_video=denoised_pred,
                 conditional_dict=conditional_dict,
@@ -254,11 +299,17 @@ class CausalInferencePipeline(torch.nn.Module):
             diffusion_time = diffusion_start.elapsed_time(diffusion_end)
             init_time = init_start.elapsed_time(init_end)
             vae_start.record()
-        if rectified_tf: 
-            mean = torch.load('laboratory/mean.pt').to(output.device) 
-            std = torch.load('laboratory/std.pt').to(output.device) 
-            noise = torch.randn_like(output).to(output.device) 
-            output -= mean 
+        if rectified_tf:
+            mean = torch.load('laboratory/mean.pt').to(output.device)
+            std = torch.load('laboratory/std.pt').to(output.device)
+            noise = torch.randn_like(output).to(output.device)
+            output -= mean
+
+        # Record diffusion time (excluding VAE decode).
+        if report_timing:
+            torch.cuda.synchronize()
+            self.last_generation_time = time.time() - self._gen_start_time
+
         # Step 4: Decode the output
         video = self.vae.decode_to_pixel(output, use_cache=False)
         video = (video * 0.5 + 0.5).clamp(0, 1)

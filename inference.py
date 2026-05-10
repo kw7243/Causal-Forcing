@@ -30,6 +30,8 @@ parser.add_argument("--num_output_frames", type=int, default=21, help="Number of
 parser.add_argument("--use_ema", action="store_true", help="Whether to use EMA parameters")
 parser.add_argument("--seed", type=int, default=0, help="Random seed")
 parser.add_argument("--i2v", action="store_true", help="Whether to perform I2V (or T2V by default)")
+parser.add_argument("--report_timing", action="store_true",
+                    help="If set, measure and print per-sample diffusion latency and FPS.")
 args = parser.parse_args()
 
 # Initialize distributed inference
@@ -101,6 +103,13 @@ else:
     dataset = TextDataset(prompt_path=args.data_path)
 num_prompts = len(dataset)
 print(f"Number of prompts: {num_prompts}")
+
+# Timing is only meaningful when we have >= 2 prompts, because the first
+# prompt is discarded as warmup (startup / one-off init dominates its cost).
+if args.report_timing and num_prompts < 2:
+    print(f"[WARN] --report_timing requires at least 2 prompts "
+          f"(got {num_prompts}); timing disabled.")
+    args.report_timing = False
 
 if dist.is_initialized():
     sampler = DistributedSampler(dataset, shuffle=False, drop_last=True)
@@ -175,13 +184,24 @@ for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
             [1, args.num_output_frames, 16, 60, 104], device=device, dtype=torch.bfloat16
         )
 
-    # Generate 81 frames
+    # Generate 81 frames. Skip timing for the first prompt (warmup):
+    # CUDA context init, lazy kernel compile, and KV cache allocation all
+    # land on that sample and would distort both latency and FPS.
+    sample_report_timing = args.report_timing and i >= 1
     video, latents = pipeline.inference(
         noise=sampled_noise,
         text_prompts=prompts,
         return_latents=True,
-        initial_latent=initial_latent
+        initial_latent=initial_latent,
+        report_timing=sample_report_timing,
     )
+    if sample_report_timing:
+        latency = pipeline.first_chunk_time
+        elapsed = pipeline.last_generation_time
+        num_pixel_frames = video.shape[1]
+        fps = num_pixel_frames / elapsed if elapsed > 0 else float('inf')
+        print(f"[Sample {i}] {num_pixel_frames} frames, "
+              f"latency(first_chunk)={latency:.2f}s, FPS={fps:.2f}")
     current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
     all_video.append(current_video)
     num_generated_frames += latents.shape[1]
