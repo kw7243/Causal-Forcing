@@ -39,6 +39,7 @@ https://github.com/user-attachments/assets/310f0cfa-e1bb-496d-8941-87f77b3271c0
 
 
 ## 🔥 News
+- **2026.5.10**: Thanks to @[AshadowZ](https://github.com/AshadowZ), now our chunk-wise ODE data curation is **3x faster**!
 - **2026.4.16**: **Optimize the Stage 2 🔥consistency distillation🔥 infrastructure for 3× faster training, let's try it now!** We have also released the ckpt.
 - **2026.3.15** : [Rolling Sink](https://github.com/haodong2000/RollingSink), [Infinity-RoPE](https://github.com/yesiltepe-hidir/infinity-rope) and [Deep Forcing](https://cvlab-kaist.github.io/DeepForcing/) adopt Causal Forcing as one of the base models!
 - **2026.2.28** : Add [FAQ section](#faq--blog) regarding hot topics, specifically which is the better Initialization between AR diffusion and causal ODE distillation.
@@ -170,7 +171,9 @@ python inference.py \
 <details>
 <summary> Stage 2 (Option a): Causal ODE Initialization (Can skip by using our pretrained checkpoints. Click to expand.)</summary>
 
-🔥You can use `bf16` to accelerate generation.
+🔥 Thanks to @[AshadowZ](https://github.com/AshadowZ), now our chunk-wise ODE data curation is **3x faster**!
+
+You can also use `bf16` to accelerate generation.
 
 If you have skipped Stage 1, you need to download the pretrained models:
 ```bash
@@ -197,6 +200,14 @@ torchrun --nproc_per_node=8 \
   --generator_ckpt checkpoints/chunkwise/ar_diffusion.pt \
   --rawdata_path dataset/clean_data \
   --output_folder dataset/ODE6KCausal_chunkwise_latents
+
+#🔥NEW: Or you can use the new code (3x speedup) by @AshadowZ 
+torchrun --nproc_per_node=8 \
+  get_causal_ode_data_chunk_kv.py \
+  --generator_ckpt checkpoints/chunkwise/ar_diffusion.pt \
+  --rawdata_path /mnt/vepfs/base2/zhaomin/group_0001_lmdb \
+  --output_folder dataset/ODE6KCausal_chunkwise_latents \
+  --generation_mode blockwise_kv
 
 python utils/create_lmdb_iterative.py \
   --data_path dataset/ODE6KCausal_chunkwise_latents \
@@ -294,9 +305,9 @@ If you have skipped Stage 2, you need to download the pretrained checkpoints:
 hf download zhuhz22/Causal-Forcing framewise/causal_ode.pt --local-dir checkpoints
 hf download zhuhz22/Causal-Forcing chunkwise/causal_ode.pt --local-dir checkpoints
 
-# Or
-# hf download zhuhz22/Causal-Forcing framewise/causal_cd.pt --local-dir checkpoints
-# hf download zhuhz22/Causal-Forcing chunkwise/causal_cd.pt --local-dir checkpoints
+# 🔥 Or you can also use the improved version: causal CD instead of causal ODE
+hf download zhuhz22/Causal-Forcing framewise/causal_cd.pt --local-dir checkpoints
+hf download zhuhz22/Causal-Forcing chunkwise/causal_cd.pt --local-dir checkpoints
 ```
 
 And then train DMD models:
@@ -343,7 +354,9 @@ See the [FAQ](https://my.feishu.cn/wiki/AjBSwcjpqiN0ECkodIWcGDcMn4e) and the [bl
 - Q: Regarding the “one-to-many” analysis in the ODE stage: since a single frame’s latent has very high dimensionality, isn’t the probability of being exactly identical extremely small?
 - A: Yes, but the key point here is not whether the dataset literally contains identical samples; it’s whether there exists a well-defined function in the mathematical sense. Our vision modalities live in a continuous space—even in 1D, getting two samples to be exactly identical is extremely unlikely. However, the theoretical existence of exact collisions is enough to break the function property and make it ill-defined.
 ## Acknowledgements
-This codebase is built on top of the open-source implementation of [CausVid](https://github.com/tianweiy/CausVid), [Self Forcing](https://github.com/guandeh17/Self-Forcing), [Rolling Forcing](https://github.com/TencentARC/RollingForcing) and the [Wan2.1](https://github.com/Wan-Video/Wan2.1) repo. Thanks to @[chijw](https://github.com/chijw) for improving the EMA mechanism. 
+- This codebase is built on top of the open-source implementation of [CausVid](https://github.com/tianweiy/CausVid), [Self Forcing](https://github.com/guandeh17/Self-Forcing), [Rolling Forcing](https://github.com/TencentARC/RollingForcing) and the [Wan2.1](https://github.com/Wan-Video/Wan2.1) repo. 
+- Thanks to @[chijw](https://github.com/chijw) for improving the EMA mechanism. 
+- Thanks to @[AshadowZ](https://github.com/AshadowZ) for improving the causal ODE data curation efficiency.
 
 ## References
 If you find the method useful, please cite
