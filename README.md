@@ -38,6 +38,17 @@ Causal Forcing significantly outperforms Self Forcing in **both visual quality a
 https://github.com/user-attachments/assets/310f0cfa-e1bb-496d-8941-87f77b3271c0
 
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+  - [Installation](#installation) 
+  - [Inference: 1/2/4-step T2V & I2V](#cli-inference)
+  - [Long Video](#minute-level-long-video-generation)
+- [Training Pipeline](#training)
+  - **Stage 1** · [AR Diffusion](#training) → **Stage 2** · [Causal ODE](#training) / [🔥 Causal CD](#-stage-2-option-b-causal-consistency-distillation-cd-initialization) → **Stage 3** · [DMD](#stage-3-dmd)
+
+-----
+
 ## 🔥 News
 - **2026.5.10**: Thanks to @[AshadowZ](https://github.com/AshadowZ), now our chunk-wise ODE data curation is **3x faster**!
 - **2026.4.16**: **Optimize the Stage 2 🔥consistency distillation🔥 infrastructure for 3× faster training, let's try it now!** We have also released the ckpt.
@@ -51,7 +62,7 @@ https://github.com/user-attachments/assets/310f0cfa-e1bb-496d-8941-87f77b3271c0
 
 ## Quick Start
 
-> The inference environment is identical to Self Forcing, so you can migrate directly using our configs and model.
+> The inference environment is identical to Self Forcing.
 
 **NOTE**: Similar to CausVid/Self Forcing, Causal Forcing does not natively support videos longer than 81 frames. As a base training method, it is orthogonal to techniques like Longlive/Rolling Forcing. To use Causal Forcing as a long video baseline, see [this extension](#minute-level-long-video-generation). **Directly using the 5-second trained Causal Forcing model as a baseline for long video generation is extremely unfair**.
 
@@ -74,21 +85,9 @@ hf download zhuhz22/Causal-Forcing framewise/causal_forcing.pt --local-dir check
 ```
 
 ### CLI Inference
-> We open-source both the frame-wise and chunk-wise models; the former is a setting that Self Forcing has chosen not to release.
 
 #### T2V
-Frame-wise model (**higher dynamic degree and more expressive, recommended**):
-```bash
-python inference.py \
-  --config_path configs/causal_forcing_dmd_framewise.yaml \
-  --output_folder output/framewise \
-  --checkpoint_path  checkpoints/framewise/causal_forcing.pt \
-  --data_path prompts/demos.txt \
-  --use_ema
-    # Note: this frame-wise config not in Self Forcing; if using its framework, migrate this config too.
-```
-
-Chunk-wise model (**more stable**):
+Chunk-wise model:
 ```bash
 python inference.py \
   --config_path configs/causal_forcing_dmd_chunkwise.yaml \
@@ -97,7 +96,37 @@ python inference.py \
   --data_path prompts/demos.txt
 ```
 
-#### 🔥NEW: I2V
+Frame-wise model:
+
+```bash
+# =============== Causal Forcing++ ================
+# 2-step Causal Forcing++
+python inference.py \
+  --config_path configs/causal_forcing_dmd_framewise_2step.yaml \
+  --output_folder output/framewise_2step_cf++ \
+  --checkpoint_path TBD \
+  --data_path prompts/demos.txt \
+  --use_ema
+
+# 1-step Causal Forcing++
+python inference.py \
+  --config_path configs/causal_forcing_dmd_framewise_1step.yaml \
+  --output_folder output/framewise_1step_cf++ \
+  --checkpoint_path TBD \
+  --data_path prompts/demos.txt \
+  --use_ema 
+
+# =============== Causal Forcing ================
+# 4-step Causal Forcing
+python inference.py \
+  --config_path configs/causal_forcing_dmd_framewise.yaml \
+  --output_folder output/framewise \
+  --checkpoint_path  checkpoints/framewise/causal_forcing.pt \
+  --data_path prompts/demos.txt \
+  --use_ema 
+```
+
+#### I2V
 > Our frame-wise setting natively supports I2V. You simply need to set the first latent initial frame as your conditional image. 
 
 ```bash
@@ -275,18 +304,21 @@ Since creating ODE-paired data is very time-consuming, we also provide an altern
     --logdir logs/causal_cd_chunkwise
   ```
 
-> We recommend training no less than 3K steps, and more steps (e.g., 5K) will lead to better performance.
+> We recommend training no less than 3K steps, and more steps (e.g., 5~10K) will lead to better performance.
 
-You can also download the checkpoints directly:
+<details>
+<summary>
+You can also download the checkpoints directly (click to expand)
+</summary>
+
 ```bash
 hf download zhuhz22/Causal-Forcing framewise/causal_cd.pt --local-dir checkpoints
 hf download zhuhz22/Causal-Forcing chunkwise/causal_cd.pt --local-dir checkpoints
 ```
-
-Inference to test training results:
-
-The same as [here](#cli-inference).
 </details>
+
+Inference to test training results: the same as [here](#cli-inference).
+
 
 
 
@@ -314,15 +346,30 @@ And then train DMD models:
 
 - Frame-wise model:
   ```bash
+  # =============== Causal Forcing ================
   torchrun --nnodes=8 --nproc_per_node=8 --rdzv_id=5235 \
     --rdzv_backend=c10d \
     --rdzv_endpoint $MASTER_ADDR \
     train.py \
     --config_path configs/causal_forcing_dmd_framewise.yaml \
     --logdir logs/causal_forcing_dmd_framewise
-  ```
-  > We recommend training 500 steps. More than 1K steps will reduce dynamic degree.
+  # =============== Causal Forcing++ ================
+  # 2-step Causal Forcing++
+  torchrun --nnodes=8 --nproc_per_node=8 --rdzv_id=5235 \
+    --rdzv_backend=c10d \
+    --rdzv_endpoint $MASTER_ADDR \
+    train.py \
+    --config_path configs/causal_forcing_dmd_framewise_2step.yaml \
+    --logdir logs/causal_forcing_dmd_framewise
 
+  # 1-step Causal Forcing++
+  torchrun --nnodes=8 --nproc_per_node=8 --rdzv_id=5235 \
+    --rdzv_backend=c10d \
+    --rdzv_endpoint $MASTER_ADDR \
+    train.py \
+    --config_path configs/causal_forcing_dmd_framewise_1step.yaml \
+    --logdir logs/causal_forcing_dmd_framewise
+  ```
 
 - Chunk-wise model:
   ```bash
@@ -333,11 +380,15 @@ And then train DMD models:
     --config_path configs/causal_forcing_dmd_chunkwise.yaml \
     --logdir logs/causal_forcing_dmd_chunkwise
   ```
-  > We recommend training 100~200 steps. More than 1K steps will reduce dynamic degree.
+> For bs64, we recommend training for no more than 1K steps; otherwise the motion dynamics may degrade. If bs is smaller (e.g., 8), more training steps is preferable.
 
 Such models are the final models used to generate videos.
 ## FAQ & Blog 
 See the [FAQ](https://my.feishu.cn/wiki/AjBSwcjpqiN0ECkodIWcGDcMn4e) and the [blog](https://zhuanlan.zhihu.com/p/2002114039493461457). (currently in Chinese)
+
+<details>
+<summary> Typical Questions (click to expand)
+</summary>
 
 **Why using bidirectional teacher in the DMD stage ?**
 - Q: In the DMD stage, do you still use a bidirectional teacher? Why not an AR teacher?
@@ -353,6 +404,9 @@ See the [FAQ](https://my.feishu.cn/wiki/AjBSwcjpqiN0ECkodIWcGDcMn4e) and the [bl
 **Can frame-level non-injectivity appears in the actual training dataset ?**
 - Q: Regarding the “one-to-many” analysis in the ODE stage: since a single frame’s latent has very high dimensionality, isn’t the probability of being exactly identical extremely small?
 - A: Yes, but the key point here is not whether the dataset literally contains identical samples; it’s whether there exists a well-defined function in the mathematical sense. Our vision modalities live in a continuous space—even in 1D, getting two samples to be exactly identical is extremely unlikely. However, the theoretical existence of exact collisions is enough to break the function property and make it ill-defined.
+
+</details>
+
 ## Acknowledgements
 - This codebase is built on top of the open-source implementation of [CausVid](https://github.com/tianweiy/CausVid), [Self Forcing](https://github.com/guandeh17/Self-Forcing), [Rolling Forcing](https://github.com/TencentARC/RollingForcing) and the [Wan2.1](https://github.com/Wan-Video/Wan2.1) repo. 
 - Thanks to @[chijw](https://github.com/chijw) for improving the EMA mechanism. 

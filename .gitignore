@@ -6,3 +6,4 @@ checkpoints
 output
 dataset
 prompts/vidprom_filtered_extended.txt
+logs

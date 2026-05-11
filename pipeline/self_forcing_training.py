@@ -16,6 +16,7 @@ class SelfForcingTrainingPipeline:
                  last_step_only: bool = False,
                  num_max_frames: int = 21,
                  context_noise: int = 0,
+                 denoising_step_list_first_chunk: Optional[List[int]] = None,
                  **kwargs):
         super().__init__()
         self.scheduler = scheduler
@@ -23,6 +24,12 @@ class SelfForcingTrainingPipeline:
         self.denoising_step_list = denoising_step_list
         if self.denoising_step_list[-1] == 0:
             self.denoising_step_list = self.denoising_step_list[:-1]  # remove the zero timestep for inference
+
+        # Optional: dedicated schedule for the first chunk (block 0).
+        # None means all blocks share `denoising_step_list` (backwards compatible).
+        self.denoising_step_list_first_chunk = denoising_step_list_first_chunk
+        if self.denoising_step_list_first_chunk is not None and self.denoising_step_list_first_chunk[-1] == 0:
+            self.denoising_step_list_first_chunk = self.denoising_step_list_first_chunk[:-1]
 
         # Wan specific hyperparameters
         self.num_transformer_blocks = 30
@@ -116,29 +123,64 @@ class SelfForcingTrainingPipeline:
         if self.independent_first_frame and initial_latent is None:
             all_num_frames = [1] + all_num_frames
         num_denoising_steps = len(self.denoising_step_list)
-        exit_flags = self.generate_and_sync_list(len(all_num_frames), num_denoising_steps, device=noise.device)
+
+        # When a dedicated first-chunk schedule is configured, sample an exit
+        # flag for the first chunk over its own schedule length, and the rest
+        # over the default schedule. Otherwise fall back to the original single
+        # sample covering all blocks.
+        if self.denoising_step_list_first_chunk is not None:
+            num_denoising_steps_first = len(self.denoising_step_list_first_chunk)
+            exit_flag_first = self.generate_and_sync_list(1, num_denoising_steps_first, device=noise.device)[0]
+            exit_flags_other = self.generate_and_sync_list(
+                len(all_num_frames) - 1, num_denoising_steps, device=noise.device)
+            exit_flags = None
+        else:
+            exit_flag_first = None
+            exit_flags_other = None
+            exit_flags = self.generate_and_sync_list(len(all_num_frames), num_denoising_steps, device=noise.device)
         start_gradient_frame_index = num_output_frames - 21
 
         # for block_index in range(num_blocks):
         for block_index, current_num_frames in enumerate(all_num_frames):
-            
+
             if True:
                 noisy_input = noise[
                     :, current_start_frame - num_input_frames:current_start_frame + current_num_frames - num_input_frames]
 
+                # Select denoising schedule for this block. Block 0 may use a
+                # dedicated schedule when configured; otherwise all blocks share
+                # `denoising_step_list`.
+                current_denoising_list = (
+                    self.denoising_step_list_first_chunk
+                    if block_index == 0 and self.denoising_step_list_first_chunk is not None
+                    else self.denoising_step_list
+                )
+
+                # Select the exit-step index for this block.
+                if exit_flags_other is not None:
+                    # First-chunk schedule is active.
+                    if block_index == 0:
+                        current_exit_flag_index = exit_flag_first
+                    elif self.same_step_across_blocks:
+                        current_exit_flag_index = exit_flags_other[0]
+                    else:
+                        current_exit_flag_index = exit_flags_other[block_index - 1]
+                else:
+                    # Original path: one shared sample across all blocks.
+                    if self.same_step_across_blocks:
+                        current_exit_flag_index = exit_flags[0]
+                    else:
+                        current_exit_flag_index = exit_flags[block_index]
+
                 # Step 3.1: Spatial denoising loop
                 # Such a loop corresponds to the truncated denoising algorithm:
                 #    T -> \tau_1 -> \tau_2 ->...-> \tau —— enable grad ——> 0
-                # For many-step model, we certainly cannot use this method, but for 4-step DMD, 
-                # we can inherit it for a fair comaprison. Note that as long as the conditions 
-                # are clean GT rather than self-generated frames, we can perform TF. So this 
+                # For many-step model, we certainly cannot use this method, but for 4-step DMD,
+                # we can inherit it for a fair comaprison. Note that as long as the conditions
+                # are clean GT rather than self-generated frames, we can perform TF. So this
                 # method does not conflict with TF in the frame- dimension.
-                for index, current_timestep in enumerate(self.denoising_step_list):
-                    # self.same_step_across_blocks is True
-                    if self.same_step_across_blocks:
-                        exit_flag = (index == exit_flags[0])
-                    else:
-                        exit_flag = (index == exit_flags[block_index])  # Only backprop at the randomly selected timestep (consistent across all ranks)
+                for index, current_timestep in enumerate(current_denoising_list):
+                    exit_flag = (index == current_exit_flag_index)
                     timestep = torch.ones(
                         [batch_size, current_num_frames],
                         device=noise.device,
@@ -154,7 +196,7 @@ class SelfForcingTrainingPipeline:
                                 crossattn_cache=self.crossattn_cache,
                                 current_start=current_start_frame * self.frame_seq_length
                             )
-                            next_timestep = self.denoising_step_list[index + 1]
+                            next_timestep = current_denoising_list[index + 1]
                             noisy_input = self.scheduler.add_noise(
                                 denoised_pred.flatten(0, 1),
                                 torch.randn_like(denoised_pred.flatten(0, 1)),
@@ -211,26 +253,35 @@ class SelfForcingTrainingPipeline:
             current_start_frame += current_num_frames
 
         # Step 3.5: Return the denoised timestep
-        if not self.same_step_across_blocks: # Useless, never met
+        # DMD's timestep sampling must align with the schedule that actually
+        # carries gradient for the non-first blocks (which produce most of the
+        # output). When a first-chunk schedule is active, use the "other" exit
+        # flag over `denoising_step_list`; otherwise use the original shared one.
+        if exit_flags_other is not None:
+            final_exit_flag = exit_flags_other[0] if self.same_step_across_blocks else None
+        else:
+            final_exit_flag = exit_flags[0] if self.same_step_across_blocks else None
+
+        if not self.same_step_across_blocks:  # Useless, never met
             denoised_timestep_from, denoised_timestep_to = None, None
         # T -> \tau_1 -> \tau_2 ->...-> \tau —— enable grad ——> 0
         # denoised_timestep_from = \tau
         # denoised_timestep_to = next timestep smaller than \tau
         # These are just engineering tricks
         # to align DMD timestep sampling with the actual denoising range used by the generator
-        elif exit_flags[0] == len(self.denoising_step_list) - 1:
+        elif final_exit_flag == len(self.denoising_step_list) - 1:
             # corner case when \tau is the smallest non-zero timestep
             denoised_timestep_to = 0
             denoised_timestep_from = 1000 - torch.argmin(
-                (self.scheduler.timesteps.cuda() - self.denoising_step_list[exit_flags[0]].cuda()).abs(), dim=0).item()
+                (self.scheduler.timesteps.cuda() - self.denoising_step_list[final_exit_flag].cuda()).abs(), dim=0).item()
         else:
             denoised_timestep_to = 1000 - torch.argmin(
-                (self.scheduler.timesteps.cuda() - self.denoising_step_list[exit_flags[0] + 1].cuda()).abs(), dim=0).item()
+                (self.scheduler.timesteps.cuda() - self.denoising_step_list[final_exit_flag + 1].cuda()).abs(), dim=0).item()
             denoised_timestep_from = 1000 - torch.argmin(
-                (self.scheduler.timesteps.cuda() - self.denoising_step_list[exit_flags[0]].cuda()).abs(), dim=0).item()
+                (self.scheduler.timesteps.cuda() - self.denoising_step_list[final_exit_flag].cuda()).abs(), dim=0).item()
 
-        if return_sim_step: # False
-            return output, denoised_timestep_from, denoised_timestep_to, exit_flags[0] + 1
+        if return_sim_step:  # False
+            return output, denoised_timestep_from, denoised_timestep_to, final_exit_flag + 1
 
         return output, denoised_timestep_from, denoised_timestep_to
 

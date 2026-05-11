@@ -22,7 +22,19 @@ class BaseModel(nn.Module):
             if args.warp_denoising_step:
                 timesteps = torch.cat((self.scheduler.timesteps.cpu(), torch.tensor([0], dtype=torch.float32))).to(self.device)
                 self.denoising_step_list = timesteps[1000 - self.denoising_step_list]
-                
+
+        # Optional: separate denoising schedule for the first chunk (block 0).
+        # If the config does not provide `denoising_step_list_first_chunk`, all
+        # blocks share `denoising_step_list` (backwards compatible).
+        if hasattr(args, "denoising_step_list_first_chunk") and args.denoising_step_list_first_chunk is not None:
+            self.denoising_step_list_first_chunk = torch.tensor(
+                args.denoising_step_list_first_chunk, dtype=torch.long, device=self.device)
+            if args.warp_denoising_step:
+                timesteps = torch.cat((self.scheduler.timesteps.cpu(), torch.tensor([0], dtype=torch.float32))).to(self.device)
+                self.denoising_step_list_first_chunk = timesteps[1000 - self.denoising_step_list_first_chunk]
+        else:
+            self.denoising_step_list_first_chunk = None
+
     def _initialize_models(self, args, device):
         
         self.real_model_name = getattr(args, "real_name", "Wan2.1-T2V-1.3B")
@@ -220,6 +232,7 @@ class SelfForcingModel(BaseModel):
         """
         self.inference_pipeline = SelfForcingTrainingPipeline(
             denoising_step_list=self.denoising_step_list,
+            denoising_step_list_first_chunk=self.denoising_step_list_first_chunk,
             scheduler=self.scheduler,
             generator=self.generator,
             num_frame_per_block=self.num_frame_per_block,
