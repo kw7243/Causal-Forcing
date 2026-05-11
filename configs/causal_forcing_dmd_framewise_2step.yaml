@@ -7,7 +7,7 @@ text_encoder_fsdp_wrap_strategy: size
 denoising_step_list:
 - 1000
 - 500
-denoising_step_list_first_chunk:
+denoising_step_list_first_chunk: #  Causal Forcing++ with 1/2 steps applies the first-frame 4-step technique proposed by [ASD](https://github.com/BigAandSmallq/SAD). We thank ASD for its contribution.
 - 1000
 - 750
 - 500

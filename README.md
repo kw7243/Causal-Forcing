@@ -28,8 +28,9 @@
 -----
 
 
-Causal Forcing significantly outperforms Self Forcing in **both visual quality and motion dynamics**, while keeping **the same training budget and inference efficiency**—enabling real-time, streaming video generation on a single RTX 4090. We support both chunk-wise and **frame-wise** models, with the latter natively unifying T2V and **I2V**.
+Causal Forcing significantly outperforms Self Forcing in **both visual quality and motion dynamics**, while keeping **the same training budget and inference efficiency**. We support both chunk-wise and **frame-wise** models, with the latter natively unifying T2V and **I2V**.
 
+We further propose **Causal Forcing++**, replacing ODE with **causal Consistency Distillation** to eliminate ODE data curation and improve performance, releasing the first **1-step/2-step frame-wise** models.
 
 -----
 
@@ -80,8 +81,12 @@ python setup.py develop
 ```bash
 hf download Wan-AI/Wan2.1-T2V-1.3B  --local-dir wan_models/Wan2.1-T2V-1.3B
 hf download Wan-AI/Wan2.1-T2V-14B  --local-dir wan_models/Wan2.1-T2V-14B
+# Causal Forcing
 hf download zhuhz22/Causal-Forcing chunkwise/causal_forcing.pt --local-dir checkpoints
 hf download zhuhz22/Causal-Forcing framewise/causal_forcing.pt --local-dir checkpoints
+# Causal Forcing++
+hf download zhuhz22/Causal-Forcing causal-forcing++/framewise-2step.pt --local-dir checkpoints
+hf download zhuhz22/Causal-Forcing causal-forcing++/framewise-1step.pt --local-dir checkpoints
 ```
 
 ### CLI Inference
@@ -104,7 +109,7 @@ Frame-wise model:
 python inference.py \
   --config_path configs/causal_forcing_dmd_framewise_2step.yaml \
   --output_folder output/framewise_2step_cf++ \
-  --checkpoint_path TBD \
+  --checkpoint_path checkpoints/causal-forcing++/framewise-2step.pt \
   --data_path prompts/demos.txt \
   --use_ema
 
@@ -112,9 +117,9 @@ python inference.py \
 python inference.py \
   --config_path configs/causal_forcing_dmd_framewise_1step.yaml \
   --output_folder output/framewise_1step_cf++ \
-  --checkpoint_path TBD \
+  --checkpoint_path checkpoints/causal-forcing++/framewise-1step.pt \
   --data_path prompts/demos.txt \
-  --use_ema 
+  --use_ema
 
 # =============== Causal Forcing ================
 # 4-step Causal Forcing
@@ -411,6 +416,7 @@ See the [FAQ](https://my.feishu.cn/wiki/AjBSwcjpqiN0ECkodIWcGDcMn4e) and the [bl
 - This codebase is built on top of the open-source implementation of [CausVid](https://github.com/tianweiy/CausVid), [Self Forcing](https://github.com/guandeh17/Self-Forcing), [Rolling Forcing](https://github.com/TencentARC/RollingForcing) and the [Wan2.1](https://github.com/Wan-Video/Wan2.1) repo. 
 - Thanks to @[chijw](https://github.com/chijw) for improving the EMA mechanism. 
 - Thanks to @[AshadowZ](https://github.com/AshadowZ) for improving the causal ODE data curation efficiency.
+- Causal Forcing++ with 1/2 steps applies the first-frame 4-step technique proposed by [ASD](https://github.com/BigAandSmallq/SAD). We thank ASD for its contribution.
 
 ## References
 If you find the method useful, please cite

@@ -26,6 +26,8 @@ class BaseModel(nn.Module):
         # Optional: separate denoising schedule for the first chunk (block 0).
         # If the config does not provide `denoising_step_list_first_chunk`, all
         # blocks share `denoising_step_list` (backwards compatible).
+        # This technique is proposed by [ASD](https://github.com/BigAandSmallq/SAD) for 1/2-step DMD. 
+        # We thank ASD for its contribution.
         if hasattr(args, "denoising_step_list_first_chunk") and args.denoising_step_list_first_chunk is not None:
             self.denoising_step_list_first_chunk = torch.tensor(
                 args.denoising_step_list_first_chunk, dtype=torch.long, device=self.device)
