@@ -1,6 +1,6 @@
 <div align="center">
 
-# Causal Forcing
+## Causal Forcing & Causal Forcing++
 ### Autoregressive Diffusion Distillation Done Right for High-Quality Real-Time Interactive Video Generation
 
 <p align="center">
@@ -12,15 +12,15 @@
     <a href="https://scholar.google.com/citations?user=dxN1_X0AAAAJ&hl=en" target="_blank">Hang Su</a><sup></sup>,
     <a href="https://zhenxuan00.github.io/" target="_blank">Chongxuan Li</a><sup></sup> ,
     <a href="https://ml.cs.tsinghua.edu.cn/~jun/index.shtml" target="_blank">Jun Zhu</a><sup></sup>
-</div>
-<div>
-    <sup></sup>Tsinghua University & Shengshu & UT Austin
-</div>
+  </div>
+  <div>
+      <sup></sup>Tsinghua University & Shengshu & UT Austin & RUC
+  </div>
 
 
 </div>
   </p>
-  <h3 align="center"><a href="https://arxiv.org/abs/2602.02214">Paper</a> | <a href="https://thu-ml.github.io/CausalForcing.github.io">Website</a> | <a href="https://huggingface.co/zhuhz22/Causal-Forcing/tree/main">Models</a> | <a href="assets/wechat.jpg">WeChat</a>  | <a href="https://my.feishu.cn/wiki/AjBSwcjpqiN0ECkodIWcGDcMn4e?from=from_copylink">Document</a> </h3>
+  <h3 align="center"><a href="https://arxiv.org/abs/2602.02214">Causal Forcing</a> | <a href="https://arxiv.org/abs/2602.02214">Causal Forcing++</a> | <a href="https://thu-ml.github.io/CausalForcing.github.io">Website</a> | <a href="https://huggingface.co/zhuhz22/Causal-Forcing/tree/main">Models</a> | <a href="assets/wechat.jpg">WeChat</a>  | <a href="https://my.feishu.cn/wiki/AjBSwcjpqiN0ECkodIWcGDcMn4e?from=from_copylink">Document</a> </h3>
 </p>
 
 
@@ -33,11 +33,7 @@ Causal Forcing significantly outperforms Self Forcing in **both visual quality a
 We further propose **Causal Forcing++**, replacing ODE with **causal Consistency Distillation** to eliminate ODE data curation and improve performance, releasing the first **1-step/2-step frame-wise** models.
 
 -----
-
-
-
-https://github.com/user-attachments/assets/310f0cfa-e1bb-496d-8941-87f77b3271c0
-
+<img width="2090" height="850" alt="overview" src="https://github.com/user-attachments/assets/df96fae3-cecc-4915-9a14-d1a5f326074e" />
 
 ## Table of Contents
 
@@ -45,10 +41,23 @@ https://github.com/user-attachments/assets/310f0cfa-e1bb-496d-8941-87f77b3271c0
   - [Installation](#installation) 
   - [Inference: 1/2/4-step T2V & I2V](#cli-inference)
   - [Long Video](#minute-level-long-video-generation)
-- [Training Pipeline](#training)
-  - **Stage 1** · [AR Diffusion](#training) → **Stage 2** · [Causal ODE](#training) / [🔥 Causal CD](#-stage-2-option-b-causal-consistency-distillation-cd-initialization) → **Stage 3** · [DMD](#stage-3-dmd)
+- [Training Pipeline](#training) (Causal Foricng / Causal Forcing++)
+  - [Stage 1: AR Diffusion](#training)
+  - [Stage 2: Causal ODE (Causal Forcing)](#training) / [🔥Causal CD (Causal Forcing++)](#-stage-2-option-b-causal-consistency-distillation-initialization-causal-forcing)
+  - [Stage 3: Asymmetric DMD](#stage-3-dmd)
+
+
+| Models              | Checkpoints | Description|
+|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------|-------|
+| Chunk-wise 4-step   | 🤗 [Huggingface](https://huggingface.co/zhuhz22/Causal-Forcing/blob/main/chunkwise/causal_forcing.pt)    | SOTA AR model on Wan1.3B outperforming Self Forcing|
+| Frame-wise 4-step   | 🤗 [Huggingface](https://huggingface.co/zhuhz22/Causal-Forcing/blob/main/framewise/causal_forcing.pt)    | Rich dynamics and high quality |
+| Frame-wise 2-step🔥 | 🤗 [Huggingface](https://huggingface.co/zhuhz22/Causal-Forcing/blob/main/causal-forcing%2B%2B/framewise-2step.pt)    | The  first frame-wise 2-step model **even better than 4-step**|
+| Frame-wise 1-step   | 🤗 [Huggingface](https://huggingface.co/zhuhz22/Causal-Forcing/blob/main/causal-forcing%2B%2B/framewise-1step.pt)    | Extremely low latency |
+| Long Video Generator   | 🤗 [Huggingface](https://huggingface.co/zhuhz22/Causal-Forcing/blob/main/chunkwise/longvideo.pt)    | Minute-long AR video generator |
 
 -----
+
+https://github.com/user-attachments/assets/310f0cfa-e1bb-496d-8941-87f77b3271c0
 
 ## 🔥 News
 - **2026.5.10**: Thanks to @[AshadowZ](https://github.com/AshadowZ), now our chunk-wise ODE data curation is **3x faster**!
@@ -152,8 +161,6 @@ Built on [Rolling Forcing](https://github.com/TencentARC/RollingForcing), we imp
 
 ## Training
 
-<img width="2090" height="850" alt="overview" src="https://github.com/user-attachments/assets/df96fae3-cecc-4915-9a14-d1a5f326074e" />
-
 <details>
 <summary> Stage 1: Autoregressive Diffusion Training (Can skip by using our pretrained checkpoints. Click to expand.)</summary>
 
@@ -235,17 +242,18 @@ torchrun --nproc_per_node=8 \
   --rawdata_path dataset/clean_data \
   --output_folder dataset/ODE6KCausal_chunkwise_latents
 
-#🔥NEW: Or you can use the new code (3x speedup) by @AshadowZ 
-torchrun --nproc_per_node=8 \
-  get_causal_ode_data_chunk_kv.py \
-  --generator_ckpt checkpoints/chunkwise/ar_diffusion.pt \
-  --rawdata_path /mnt/vepfs/base2/zhaomin/group_0001_lmdb \
-  --output_folder dataset/ODE6KCausal_chunkwise_latents \
-  --generation_mode blockwise_kv
-
 python utils/create_lmdb_iterative.py \
   --data_path dataset/ODE6KCausal_chunkwise_latents \
   --lmdb_path dataset/ODE6KCausal_chunkwise
+
+#🔥NEW: Or you can use the optimized code (3x speedup) by @AshadowZ 
+torchrun --nproc_per_node=8 \
+  get_causal_ode_data_kv.py \
+  --generator_ckpt checkpoints/{chunkwise,framewise}/ar_diffusion.pt \
+  --rawdata_path /mnt/vepfs/base2/zhaomin/group_0001_lmdb \
+  --output_folder dataset/ODE6KCausal_{chunkwise,framewise}_latents \
+  --num_frames_per_chunk 3/1 # 3 for chunkwise, 1 for framewise
+  --generation_mode blockwise_kv
 ```
 
 Or you can also directly download our prepared dataset (~300G):
@@ -285,7 +293,7 @@ The same as [here](#cli-inference).
 
 
 
-### 🔥 Stage 2 (Option b): Causal Consistency Distillation (CD) Initialization
+### 🔥 Stage 2 (Option b): Causal Consistency Distillation Initialization (Causal Forcing++)
 Since creating ODE-paired data is very time-consuming, we also provide an alternative here that achieves the same effect (or better) as ODE distillation while requiring only ground-truth data, **free of generating ODE data!**
 
 > Thanks to [@chijw's effort](https://github.com/thu-ml/Causal-Forcing/pull/20), now the EMA mechanism is more efficient!
@@ -313,7 +321,7 @@ Since creating ODE-paired data is very time-consuming, we also provide an altern
 
 <details>
 <summary>
-You can also download the checkpoints directly (click to expand)
+You can also download the checkpoints directly (click to expand) :
 </summary>
 
 ```bash
@@ -329,23 +337,26 @@ Inference to test training results: the same as [here](#cli-inference).
 
 ### Stage 3: DMD
 
-> This stage is compatible with Self Forcing training, so you can migrate seamlessly by using our configs and checkpoints.
-
-> Set your wandb configs before training.
-
 First download the dataset:
 ```bash
 hf download gdhe17/Self-Forcing vidprom_filtered_extended.txt --local-dir prompts
 ```
-If you have skipped Stage 2, you need to download the pretrained checkpoints:
+
+<details>
+
+<summary>
+If you have skipped Stage 2, you need to download our pretrained checkpoints (click to expand):
+</summary>
+
 ```bash
 hf download zhuhz22/Causal-Forcing framewise/causal_ode.pt --local-dir checkpoints
 hf download zhuhz22/Causal-Forcing chunkwise/causal_ode.pt --local-dir checkpoints
 
-# 🔥 Or you can also use the improved version: causal CD instead of causal ODE
+# 🔥 Or you can also use the improved version (Causal Forcing++): causal CD instead of causal ODE
 hf download zhuhz22/Causal-Forcing framewise/causal_cd.pt --local-dir checkpoints
 hf download zhuhz22/Causal-Forcing chunkwise/causal_cd.pt --local-dir checkpoints
 ```
+</details>
 
 And then train DMD models:
 
