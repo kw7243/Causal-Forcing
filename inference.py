@@ -31,7 +31,7 @@ parser.add_argument("--use_ema", action="store_true", help="Whether to use EMA p
 parser.add_argument("--seed", type=int, default=0, help="Random seed")
 parser.add_argument("--i2v", action="store_true", help="Whether to perform I2V (or T2V by default)")
 parser.add_argument("--report_timing", action="store_true",
-                    help="If set, measure and print per-sample diffusion latency and FPS.")
+                    help="Only tested on A800, for the Causal Forcing++ latency. Not make claims for other hardware like H100. For the result on H100, refer to the reported results in the Self Forcing paper.")
 args = parser.parse_args()
 
 # Initialize distributed inference
@@ -104,8 +104,6 @@ else:
 num_prompts = len(dataset)
 print(f"Number of prompts: {num_prompts}")
 
-# Timing is only meaningful when we have >= 2 prompts, because the first
-# prompt is discarded as warmup (startup / one-off init dominates its cost).
 if args.report_timing and num_prompts < 2:
     print(f"[WARN] --report_timing requires at least 2 prompts "
           f"(got {num_prompts}); timing disabled.")
@@ -184,9 +182,6 @@ for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
             [1, args.num_output_frames, 16, 60, 104], device=device, dtype=torch.bfloat16
         )
 
-    # Generate 81 frames. Skip timing for the first prompt (warmup):
-    # CUDA context init, lazy kernel compile, and KV cache allocation all
-    # land on that sample and would distort both latency and FPS.
     sample_report_timing = args.report_timing and i >= 1
     video, latents = pipeline.inference(
         noise=sampled_noise,
@@ -201,7 +196,11 @@ for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
         num_pixel_frames = video.shape[1]
         fps = num_pixel_frames / elapsed if elapsed > 0 else float('inf')
         print(f"[Sample {i}] {num_pixel_frames} frames, "
-              f"latency(first_chunk)={latency:.2f}s, FPS={fps:.2f}")
+              f"latency ↓ {latency:.2f}s, FPS ↑ {fps:.2f}")
+        # Only tested on A800, for the Causal Forcing++ paper latency & throughput.
+        # Not make claims for other hardware like H100.
+        # For the result on H100, refer to the reported results in the Self Forcing paper.
+        # We do not guarantee that our FPS/latency measurement protocol is identical to that used in the Self Forcing paper.
     current_video = rearrange(video, 'b t c h w -> b t h w c').cpu()
     all_video.append(current_video)
     num_generated_frames += latents.shape[1]

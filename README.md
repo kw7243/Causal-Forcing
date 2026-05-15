@@ -20,7 +20,7 @@
 
 </div>
   </p>
-  <h3 align="center"><a href="https://arxiv.org/abs/2602.02214">Causal Forcing</a> | <a href="https://arxiv.org/abs/2602.02214">Causal Forcing++</a> | <a href="https://thu-ml.github.io/CausalForcing.github.io">Website</a> | <a href="https://huggingface.co/zhuhz22/Causal-Forcing/tree/main">Models</a> | <a href="assets/wechat.jpg">WeChat</a>  | <a href="https://my.feishu.cn/wiki/AjBSwcjpqiN0ECkodIWcGDcMn4e?from=from_copylink">Document</a> </h3>
+  <h3 align="center"><a href="https://arxiv.org/abs/2602.02214">Causal Forcing</a> | <a href="https://arxiv.org/abs/2605.15141">Causal Forcing++</a> | <a href="https://thu-ml.github.io/CausalForcing.github.io">Website</a> | <a href="https://huggingface.co/zhuhz22/Causal-Forcing/tree/main">Models</a> | <a href="assets/wechat.jpg">WeChat</a>  | <a href="https://my.feishu.cn/wiki/AjBSwcjpqiN0ECkodIWcGDcMn4e?from=from_copylink">Document</a> </h3>
 </p>
 
 
@@ -60,6 +60,7 @@ We further propose **Causal Forcing++**, replacing ODE with **causal Consistency
 https://github.com/user-attachments/assets/310f0cfa-e1bb-496d-8941-87f77b3271c0
 
 ## 🔥 News
+- **2026.5.15**: We release [Causal Forcing++](https://arxiv.org/abs/2605.15141), supporting Casual Consistency Distillation for few-step initialization, and open-source **the first frame-wise 2-step AR model** comparable to chunk-wise 4-step models!
 - **2026.5.10**: Thanks to @[AshadowZ](https://github.com/AshadowZ), now our chunk-wise ODE data curation is **3x faster**!
 - **2026.4.16**: **Optimize the Stage 2 🔥consistency distillation🔥 infrastructure for 3× faster training, let's try it now!** We have also released the ckpt.
 - **2026.3.15** : [Rolling Sink](https://github.com/haodong2000/RollingSink), [Infinity-RoPE](https://github.com/yesiltepe-hidir/infinity-rope) and [Deep Forcing](https://cvlab-kaist.github.io/DeepForcing/) adopt Causal Forcing as one of the base models!
@@ -293,7 +294,7 @@ The same as [here](#cli-inference).
 
 
 
-### 🔥 Stage 2 (Option b): Causal Consistency Distillation Initialization (Causal Forcing++)
+### 🔥 Stage 2 (Option b): Causal Consistency Distillation Initialization ([Causal Forcing++](https://arxiv.org/abs/2605.15141))
 Since creating ODE-paired data is very time-consuming, we also provide an alternative here that achieves the same effect (or better) as ODE distillation while requiring only ground-truth data, **free of generating ODE data!**
 
 > Thanks to [@chijw's effort](https://github.com/thu-ml/Causal-Forcing/pull/20), now the EMA mechanism is more efficient!
