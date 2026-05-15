@@ -28,9 +28,9 @@
 -----
 
 
-Causal Forcing significantly outperforms Self Forcing in **both visual quality and motion dynamics**, while keeping **the same training budget and inference efficiency**. We support both chunk-wise and **frame-wise** models, with the latter natively unifying T2V and **I2V**.
+[Causal Forcing](https://arxiv.org/abs/2602.02214) significantly outperforms Self Forcing in **both visual quality and motion dynamics**, while keeping **the same training budget and inference efficiency**. We support both chunk-wise and **frame-wise** models, with the latter natively unifying T2V and **I2V**.
 
-We further propose **Causal Forcing++**, replacing ODE with **causal Consistency Distillation** to eliminate ODE data curation and improve performance, releasing the first **1-step/2-step frame-wise** models.
+We further propose [**Causal Forcing++**](https://arxiv.org/abs/2605.15141), replacing ODE with **causal Consistency Distillation** to eliminate ODE data curation and improve performance, releasing the first **1-step/2-step frame-wise** models.
 
 -----
 <img width="2090" height="850" alt="overview" src="assets/pipeline.png" />
@@ -438,5 +438,15 @@ If you find the method useful, please cite
   author={Zhu, Hongzhou and Zhao, Min and He, Guande and Su, Hang and Li, Chongxuan and Zhu, Jun},
   journal={arXiv preprint arXiv:2602.02214},
   year={2026}
+}
+
+@misc{zhao2026causalforcingscalablefewstep,
+      title={Causal Forcing++: Scalable Few-Step Autoregressive Diffusion Distillation for Real-Time Interactive Video Generation}, 
+      author={Min Zhao and Hongzhou Zhu and Kaiwen Zheng and Zihan Zhou and Bokai Yan and Xinyuan Li and Xiao Yang and Chongxuan Li and Jun Zhu},
+      year={2026},
+      eprint={2605.15141},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2605.15141}, 
 }
 ```
