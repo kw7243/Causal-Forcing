@@ -33,7 +33,7 @@ Causal Forcing significantly outperforms Self Forcing in **both visual quality a
 We further propose **Causal Forcing++**, replacing ODE with **causal Consistency Distillation** to eliminate ODE data curation and improve performance, releasing the first **1-step/2-step frame-wise** models.
 
 -----
-<img width="2090" height="850" alt="overview" src="https://github.com/user-attachments/assets/df96fae3-cecc-4915-9a14-d1a5f326074e" />
+<img width="2090" height="850" alt="overview" src="assets/pipeline.png" />
 
 ## Table of Contents
 
