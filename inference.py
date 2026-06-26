@@ -5,12 +5,12 @@ import os
 from omegaconf import OmegaConf
 from tqdm import tqdm
 from torchvision import transforms
-from torchvision.io import write_video
 from einops import rearrange
 import torch.distributed as dist
 from torch.utils.data import DataLoader, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 import json
+import imageio
 
 from pipeline import (
     CausalDiffusionInferencePipeline,
@@ -213,6 +213,7 @@ for i, batch_data in tqdm(enumerate(dataloader), disable=(local_rank != 0)):
     pipeline.vae.model.clear_cache()
 
     output_path = os.path.join(args.output_folder, f'{prompt[:100]}.mp4')
-    write_video(output_path, video[0], fps=16)
+    frames = video[0].clamp(0, 255).to(torch.uint8).numpy()
+    imageio.mimwrite(output_path, frames, fps=16, quality=8, macro_block_size=1)
 
        
