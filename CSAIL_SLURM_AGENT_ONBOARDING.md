@@ -1,4 +1,4 @@
-# Remote Machine Usage/ CSAIL Slurm Cluster Usage
+# Remote Machine Usage / CSAIL Slurm Cluster Usage
 
 This repo may be developed/run on the CSAIL Slurm cluster. Do **not** assume direct GPU access on login nodes.
 
@@ -9,19 +9,21 @@ This repo may be developed/run on the CSAIL Slurm cluster. Do **not** assume dir
 - Do not store the CSAIL password in this file. Password is needed and the prompt is not visible to the user, so ask the user for it in the current session.
 - If prompted for Duo, choose option `1` for Duo Push.
 - Use Slurm from the login node to get onto GPU nodes.
-- If user asks for a generic GPU (ex. H100), only consider allocating from nodes with "torralba" in the name, as those are the nodes from the user's lab
-- Before running code, be sure the current GPU node can support it (ex. check memory available, CUDA avail, etc)
+- If user asks for a generic GPU (ex. H100), only consider allocating from nodes with `torralba` in the name, as those are the nodes from the user's lab.
+- Before running code, be sure the current GPU node can support it (ex. check memory available, CUDA avail, etc.).
 
 ## Cluster etiquette
 
-Do NOT modify anything that belongs to the system or login nodes. Isolate any installs to my personal storage units as much as possible. Do NOT touch any directory marked with a different username than "kwen1" (ex. "/data/scratch-fast/kswain"). Refer to storage notes for more details.
+Do **not** modify anything that belongs to the system or login nodes. Isolate installs to the user's personal storage units as much as possible. Do **not** touch any directory marked with a different username than `kwen1` (ex. `/data/scratch-fast/kswain`). Refer to storage notes for more details.
 
 ### Example
 
+```bash
 kwen1@torralba-3090-2:/data/scratch-fast/kwen1/Causal-Forcing$ which python3
 /usr/bin/python3
+```
 
-This indicates python3 is a system-level thing, so do NOT install any packages on top of this but rather use a separate Python for my purposes. 
+This indicates `python3` is a system-level thing, so do **not** install packages on top of it. Use a separate Python environment for user work.
 
 ## Storage notes
 
@@ -60,13 +62,15 @@ Avoid installing large environments or VS Code server files into AFS home when p
   `git config core.sshCommand 'ssh -F /afs/csail.mit.edu/u/k/kwen1/.ssh-github/config'`
 - Then normal `git pull`, `git push`, and `git fetch` should work from inside the repo.
 - After each fresh login/session, unlock the key once:
-  `eval "$(ssh-agent -s)"`
-  `ssh-add /afs/csail.mit.edu/u/k/kwen1/.ssh-github/github_ed25519`
+  ```bash
+  eval "$(ssh-agent -s)"
+  ssh-add /afs/csail.mit.edu/u/k/kwen1/.ssh-github/github_ed25519
+  ```
 - `/data` is for active coding and large working files; less reliable than AFS for persistent config/secrets.
 
 ## Correct account / QoS / partition
 
-The user’s valid Slurm account for Torralba Vision resources is:
+The user's valid Slurm account for Torralba Vision resources is:
 
 ```bash
 --account=vision-torralba-urops-meng
@@ -84,7 +88,7 @@ A known-working partition is:
 --partition=vision-torralba-rtx3090
 ```
 
-Example of allocation
+Example allocation:
 
 ```bash
 salloc \
@@ -100,7 +104,7 @@ salloc \
 
 ### Useful diagnostics
 
-Show current user’s Slurm associations:
+Show current user's Slurm associations:
 
 ```bash
 sacctmgr show assoc user=kwen1 -P
@@ -128,4 +132,119 @@ tig-debug
 tig-main
 vision-torralba-interactive
 vision-torralba-urops-meng
+```
+
+
+## Codex workflow
+
+Goal: Codex should run reliably on compute/GPU nodes while using one shared chat/auth/history location across nodes.
+
+### Canonical Codex locations
+
+Use scratch for the executable:
+
+```bash
+/data/scratch-fast/kwen1/bin/codex
+/data/scratch-fast/kwen1/bin/codex-bin
+```
+
+Use AFS for shared Codex state:
+
+```bash
+/afs/csail.mit.edu/u/k/kwen1/.codex
+```
+
+The required environment is:
+
+```bash
+export AFS_HOME="/afs/csail.mit.edu/u/k/kwen1"
+export CODEX_HOME="$AFS_HOME/.codex"
+export PATH="/data/scratch-fast/kwen1/bin:$(echo "$PATH" | tr ':' '\n' | grep -v '^/data/scratch-fast/kwen1/bin$' | paste -sd: -)"
+```
+
+This should already be in:
+
+```bash
+/afs/csail.mit.edu/u/k/kwen1/.bashrc
+```
+
+### Important behavior
+
+- Do **not** run interactive Codex sessions on Slurm login nodes. Login nodes may kill Codex after around a minute.
+- Run Codex on an allocated compute/GPU node.
+- The scratch `codex` command should be a wrapper script. It should:
+  - set `CODEX_HOME=/afs/csail.mit.edu/u/k/kwen1/.codex`
+  - ensure Kerberos/AFS access with `kinit`/`aklog` when needed
+  - execute `/data/scratch-fast/kwen1/bin/codex-bin`
+  - refuse interactive Codex sessions on `slurm-login-*` nodes
+
+### Normal Codex startup
+
+From login node, allocate a GPU:
+
+```bash
+salloc \
+  --account=vision-torralba-urops-meng \
+  --qos=vision-torralba-interactive \
+  --partition=vision-torralba-rtx3090 \
+  --nodes=1 \
+  --cpus-per-task=8 \
+  --gres=gpu:1 \
+  --mem=32G \
+  --time=05:00:00
+```
+
+Enter the allocated node:
+
+```bash
+srun --pty bash
+```
+
+On the GPU node:
+
+```bash
+cd /data/scratch-fast/kwen1/Causal-Forcing
+codex
+```
+
+If prompted for the CSAIL password, enter it. The wrapper should then obtain AFS access and launch Codex with shared state.
+
+### Sanity checks
+
+Run these on the GPU node if Codex behavior seems wrong:
+
+```bash
+which codex
+type -a codex
+echo "$CODEX_HOME"
+codex --version
+tokens
+klist
+```
+
+Expected important outputs:
+
+```text
+which codex -> /data/scratch-fast/kwen1/bin/codex
+CODEX_HOME  -> /afs/csail.mit.edu/u/k/kwen1/.codex
+```
+
+If AFS access is missing:
+
+```bash
+kinit kwen1@CSAIL.MIT.EDU
+aklog csail.mit.edu
+tokens
+```
+
+### Refresh Codex binary after updates
+
+If the AFS Codex package updates, refresh the scratch binary:
+
+```bash
+cp /afs/csail.mit.edu/u/k/kwen1/.codex/packages/standalone/current/bin/codex \
+   /data/scratch-fast/kwen1/bin/codex-bin
+
+chmod +x /data/scratch-fast/kwen1/bin/codex-bin
+codex --version
 ```
